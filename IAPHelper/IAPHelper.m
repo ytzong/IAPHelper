@@ -281,67 +281,76 @@
 
 }
 
-- (void)checkReceipt:(NSData*)receiptData onCompletion:(checkReceiptCompleteResponseBlock)completion
-{
-    [self checkReceipt:receiptData AndSharedSecret:nil onCompletion:completion];
-}
 - (void)checkReceipt:(NSData*)receiptData AndSharedSecret:(NSString*)secretKey onCompletion:(checkReceiptCompleteResponseBlock)completion
 {
+self.checkReceiptCompleteBlock = completion;
+
+NSError *jsonError = nil;
+//    NSString *receiptBase64 = [NSString base64StringFromData:receiptData length:[receiptData length]];
+NSString *receiptBase64 = [receiptData base64EncodedStringWithOptions:0];
+
+NSData *jsonData = nil;
+
+if(secretKey !=nil && ![secretKey isEqualToString:@""]) {
     
-    self.checkReceiptCompleteBlock = completion;
-
-    NSError *jsonError = nil;
-    NSString *receiptBase64 = [NSString base64StringFromData:receiptData length:[receiptData length]];
-
-
-    NSData *jsonData = nil;
-
-    if(secretKey !=nil && ![secretKey isEqualToString:@""]) {
-        
-        jsonData = [NSJSONSerialization dataWithJSONObject:[NSDictionary dictionaryWithObjectsAndKeys:receiptBase64,@"receipt-data",
-                                                            secretKey,@"password",
-                                                            nil]
-                                                   options:NSJSONWritingPrettyPrinted
-                                                     error:&jsonError];
-        
-    }
-    else {
-        jsonData = [NSJSONSerialization dataWithJSONObject:[NSDictionary dictionaryWithObjectsAndKeys:
-                                                                receiptBase64,@"receipt-data",
-                                                                nil]
-                                                       options:NSJSONWritingPrettyPrinted
-                                                         error:&jsonError
-                        ];
-    }
+    jsonData = [NSJSONSerialization dataWithJSONObject:[NSDictionary dictionaryWithObjectsAndKeys:receiptBase64,@"receipt-data",
+                                                        secretKey,@"password",
+                                                        nil]
+                                               options:NSJSONWritingPrettyPrinted
+                                                 error:&jsonError];
+    
+}
+else {
+    jsonData = [NSJSONSerialization dataWithJSONObject:[NSDictionary dictionaryWithObjectsAndKeys:
+                                                        receiptBase64,@"receipt-data",
+                                                        nil]
+                                               options:NSJSONWritingPrettyPrinted
+                                                 error:&jsonError
+                ];
+}
 
 
 //    NSString* jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
 
-    NSURL *requestURL = nil;
-    if(_production)
-    {
-        requestURL = [NSURL URLWithString:@"https://buy.itunes.apple.com/verifyReceipt"];
-    }
-    else {
-        requestURL = [NSURL URLWithString:@"https://sandbox.itunes.apple.com/verifyReceipt"];
-    }
+NSURL *requestURL = nil;
+if(_production)
+{
+    requestURL = [NSURL URLWithString:@"https://buy.itunes.apple.com/verifyReceipt"];
+}
+else {
+    requestURL = [NSURL URLWithString:@"https://sandbox.itunes.apple.com/verifyReceipt"];
+}
 
-    NSMutableURLRequest *req = [[NSMutableURLRequest alloc] initWithURL:requestURL];
-    [req setHTTPMethod:@"POST"];
-    [req setHTTPBody:jsonData];
+NSMutableURLRequest *req = [[NSMutableURLRequest alloc] initWithURL:requestURL];
+[req setHTTPMethod:@"POST"];
+[req setHTTPBody:jsonData];
+[req setTimeoutInterval:30];
 
-    NSURLConnection *conn = [[NSURLConnection alloc] initWithRequest:req delegate:self];
-    if(conn) {
-        self.receiptRequestData = [[NSMutableData alloc] init];
-    } else {
-        NSError* error = nil;
-        NSMutableDictionary* errorDetail = [[NSMutableDictionary alloc] init];
-        [errorDetail setValue:@"Can't create connection" forKey:NSLocalizedDescriptionKey];
-        error = [NSError errorWithDomain:@"IAPHelperError" code:100 userInfo:errorDetail];
-        if(_checkReceiptCompleteBlock) {
-            _checkReceiptCompleteBlock(nil,error);
-        }
-    }
+NSURLSession *session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration]];
+//    self.receiptRequestData = [[NSMutableData alloc] init];
+
+[[session
+  dataTaskWithRequest:req
+  completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+      
+      if (error) {
+          if(_checkReceiptCompleteBlock) {
+              _checkReceiptCompleteBlock(nil,error);
+          }
+      }else{
+          if (data) {
+              NSDictionary *jsonResponse = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+              if(_checkReceiptCompleteBlock) {
+                  _checkReceiptCompleteBlock(jsonResponse,nil);
+              }
+          }else{
+              if(_checkReceiptCompleteBlock) {
+                  _checkReceiptCompleteBlock(nil, nil);
+              }
+          }
+      }
+      
+  }]resume];
 }
 
 -(void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error {
